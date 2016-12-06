@@ -51,14 +51,25 @@ namespace loadTestTool
         private void _timer_Elapsed(object sender, ElapsedEventArgs e)
         {
             WorkingParralelClientsCount = GetClientsPerSecond();
+            ReceivedMbps = GetBytesPerSecond() / 1024;
         }
 
         private int GetClientsPerSecond()
         {
-            lock (mylocker)
+            lock (persecondLocker)
             {
                 var temp = requestPerSecond;
                 requestPerSecond = 0;
+                return temp;
+            }
+        }
+
+        private int GetBytesPerSecond()
+        {
+            lock (persecondLocker)
+            {
+                var temp = bytesPerSecond;
+                bytesPerSecond = 0;
                 return temp;
             }
         }
@@ -232,6 +243,7 @@ namespace loadTestTool
         }
 
         private int requestPerSecond = 0;
+        private int bytesPerSecond = 0;
 
         private void RunClient(object obj)
         {
@@ -243,46 +255,55 @@ namespace loadTestTool
                     client.Headers[header.HeaderName] = header.HeaderValue;
                 }
                 client.Method = "GET";
+
+
                 var startTime = DateTime.UtcNow;
                 try
                 {
                     using (var responce = client.GetResponse())
                     {
                         UpdateClientsPerSecond(1);
+
                         StreamReader stream = new StreamReader(responce.GetResponseStream());
                         var result = stream.ReadToEnd();
                         stream.Close();
                         var endTime = DateTime.UtcNow;
-                        Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = "ok" });
-                        }));
+                        UpdateBytesPerSecond(result.Length);
+                        //Dispatcher.BeginInvoke(new Action(() =>
+                        //{
+                        //    Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = "ok" });
+                        //}));
                     }
                 }
                 catch (Exception e)
                 {
                     var endTime = DateTime.UtcNow;
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = e.Message });
-                    }));
+                    //Dispatcher.BeginInvoke(new Action(() =>
+                    //{
+                    //    Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = e.Message });
+                    //}));
                 }
             }
         }
 
-        private object mylocker = new object();
+        private object persecondLocker = new object();
 
         private void UpdateClientsPerSecond(int i)
         {
-            lock (mylocker)
+            lock (persecondLocker)
             {
                 requestPerSecond += i;
             }
         }
 
-        private void UpdateClientsAmountClick(object sender, RoutedEventArgs e)
+        private object bytesPersecondLocker = new object();
+
+        private void UpdateBytesPerSecond(int i)
         {
-            throw new NotImplementedException();
+            lock (bytesPersecondLocker)
+            {
+                bytesPerSecond += i;
+            }
         }
     }
 }
