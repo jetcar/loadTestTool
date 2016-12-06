@@ -8,5 +8,7 @@ namespace loadTestTool
 {
     public class Result
     {
+        public string Status { get; set; }
+        public double Time { get; set; }
     }
 }

@@ -3,10 +3,14 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -16,6 +20,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
+using Timer = System.Timers.Timer;
 
 namespace loadTestTool
 {
@@ -34,10 +39,34 @@ namespace loadTestTool
         private int _errorsCount;
         private int _workingParralelClientsCount;
         private string _buttonText = "Start test";
+        private Timer _timer;
 
         public MainWindow()
         {
             InitializeComponent();
+            _timer = new Timer(1000);
+            _timer.Elapsed += _timer_Elapsed;
+        }
+
+        private void _timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            WorkingParralelClientsCount = GetClientsPerSecond();
+        }
+
+        private int GetClientsPerSecond()
+        {
+            lock (mylocker)
+            {
+                var temp = requestPerSecond;
+                requestPerSecond = 0;
+                return temp;
+            }
+        }
+
+        public ObservableCollection<Result> Results
+        {
+            get { return _results; }
+            set { _results = value; }
         }
 
         public ObservableCollection<Header> Headers
@@ -46,7 +75,11 @@ namespace loadTestTool
             set { _headers = value; }
         }
 
-        public string Url { get; set; }
+        public string Url
+        {
+            get { return _url; }
+            set { _url = value; }
+        }
 
         public string HeaderName
         {
@@ -168,7 +201,86 @@ namespace loadTestTool
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
+        private bool isrunning = false;
+        private ObservableCollection<Result> _results = new ObservableCollection<Result>();
+        private string _url = "http://dsgdsg.eu:3000";
+
         private void StartClick(object sender, RoutedEventArgs e)
+        {
+            isrunning = !isrunning;
+            if (isrunning)
+            {
+                _timer.Start();
+                ButtonText = "Stop test";
+                Thread thread = new Thread(StartRunningTest);
+                thread.Start();
+            }
+            else
+            {
+                ButtonText = "Start test";
+                _timer.Stop();
+            }
+        }
+
+        private void StartRunningTest(object obj)
+        {
+            for (int i = 0; i < ClientsCount; i++)
+            {
+                Thread thead = new Thread(RunClient);
+                thead.Start();
+            }
+        }
+
+        private int requestPerSecond = 0;
+
+        private void RunClient(object obj)
+        {
+            while (isrunning)
+            {
+                HttpWebRequest client = HttpWebRequest.CreateHttp(Url);
+                foreach (var header in Headers)
+                {
+                    client.Headers[header.HeaderName] = header.HeaderValue;
+                }
+                client.Method = "GET";
+                var startTime = DateTime.UtcNow;
+                try
+                {
+                    using (var responce = client.GetResponse())
+                    {
+                        UpdateClientsPerSecond(1);
+                        StreamReader stream = new StreamReader(responce.GetResponseStream());
+                        var result = stream.ReadToEnd();
+                        stream.Close();
+                        var endTime = DateTime.UtcNow;
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = "ok" });
+                        }));
+                    }
+                }
+                catch (Exception e)
+                {
+                    var endTime = DateTime.UtcNow;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = e.Message });
+                    }));
+                }
+            }
+        }
+
+        private object mylocker = new object();
+
+        private void UpdateClientsPerSecond(int i)
+        {
+            lock (mylocker)
+            {
+                requestPerSecond += i;
+            }
+        }
+
+        private void UpdateClientsAmountClick(object sender, RoutedEventArgs e)
         {
             throw new NotImplementedException();
         }
