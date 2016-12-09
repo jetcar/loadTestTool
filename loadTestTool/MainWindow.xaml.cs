@@ -50,13 +50,16 @@ namespace loadTestTool
 
         private void _timer_Elapsed(object sender, ElapsedEventArgs e)
         {
-            WorkingParralelClientsCount = GetClientsPerSecond();
-            ReceivedMbps = GetBytesPerSecond() / 1024;
+            lock (persecondLocker)
+            {
+                WorkingParralelClientsCount = GetClientsPerSecond();
+                ReceivedMbps = GetBytesPerSecond() / 1024;
+                AverageTime = GetTimePerRequest() / WorkingParralelClientsCount;
+            }
         }
 
         private int GetClientsPerSecond()
         {
-            lock (persecondLocker)
             {
                 var temp = requestPerSecond;
                 requestPerSecond = 0;
@@ -64,9 +67,17 @@ namespace loadTestTool
             }
         }
 
+        private int GetTimePerRequest()
+        {
+            {
+                var temp = (int)timePerRequest;
+                timePerRequest = 0;
+                return temp;
+            }
+        }
+
         private int GetBytesPerSecond()
         {
-            lock (persecondLocker)
             {
                 var temp = bytesPerSecond;
                 bytesPerSecond = 0;
@@ -242,6 +253,7 @@ namespace loadTestTool
             }
         }
 
+        private double timePerRequest = 0;
         private int requestPerSecond = 0;
         private int bytesPerSecond = 0;
 
@@ -262,13 +274,11 @@ namespace loadTestTool
                 {
                     using (var responce = client.GetResponse())
                     {
-                        UpdateClientsPerSecond(1);
-
                         StreamReader stream = new StreamReader(responce.GetResponseStream());
                         var result = stream.ReadToEnd();
                         stream.Close();
                         var endTime = DateTime.UtcNow;
-                        UpdateBytesPerSecond(result.Length);
+                        UpdateStatsPerSecond(result.Length, (endTime - startTime).TotalMilliseconds, 1);
                         //Dispatcher.BeginInvoke(new Action(() =>
                         //{
                         //    Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = "ok" });
@@ -278,31 +288,23 @@ namespace loadTestTool
                 catch (Exception e)
                 {
                     var endTime = DateTime.UtcNow;
-                    //Dispatcher.BeginInvoke(new Action(() =>
-                    //{
-                    //    Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = e.Message });
-                    //}));
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = e.Message });
+                    }));
                 }
             }
         }
 
         private object persecondLocker = new object();
 
-        private void UpdateClientsPerSecond(int i)
+        private void UpdateStatsPerSecond(int i, double ms, int clientCount)
         {
             lock (persecondLocker)
             {
-                requestPerSecond += i;
-            }
-        }
-
-        private object bytesPersecondLocker = new object();
-
-        private void UpdateBytesPerSecond(int i)
-        {
-            lock (bytesPersecondLocker)
-            {
                 bytesPerSecond += i;
+                requestPerSecond += clientCount;
+                timePerRequest += ms;
             }
         }
     }
