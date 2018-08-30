@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Security;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
@@ -32,7 +33,7 @@ namespace loadTestTool
         private ObservableCollection<Header> _headers = new ObservableCollection<Header>();
         private string _headerValue;
         private string _headerName;
-        private int _clientsCount;
+        private int _clientsCount = 1;
         private int _averageTime;
         private int _received;
         private int _receivedMbps;
@@ -43,6 +44,18 @@ namespace loadTestTool
 
         public MainWindow()
         {
+            try
+            {
+                //Change SSL checks so that all checks pass
+                ServicePointManager.ServerCertificateValidationCallback =
+                    new RemoteCertificateValidationCallback(
+                        delegate
+                        { return true; }
+                    );
+            }
+            catch (Exception ex)
+            {
+            }
             InitializeComponent();
             _timer = new Timer(1000);
             _timer.Elapsed += _timer_Elapsed;
@@ -54,7 +67,8 @@ namespace loadTestTool
             {
                 WorkingParralelClientsCount = GetClientsPerSecond();
                 ReceivedMbps = GetBytesPerSecond() / 1024;
-                AverageTime = GetTimePerRequest() / WorkingParralelClientsCount;
+                if (WorkingParralelClientsCount > 0)
+                    AverageTime = GetTimePerRequest() / WorkingParralelClientsCount;
             }
         }
 
@@ -224,14 +238,15 @@ namespace loadTestTool
         }
 
         private bool isrunning = false;
-        private ObservableCollection<Result> _results = new ObservableCollection<Result>();
-        private string _url = "http://dsgdsg.eu:3000";
+        private ObservableCollection<Result> _results = new ObservableCollection<Result>() { new Result() { } };
+        private string _url = "";
 
         private void StartClick(object sender, RoutedEventArgs e)
         {
             isrunning = !isrunning;
             if (isrunning)
             {
+                
                 _timer.Start();
                 ButtonText = "Stop test";
                 Thread thread = new Thread(StartRunningTest);
@@ -288,10 +303,13 @@ namespace loadTestTool
                 catch (Exception e)
                 {
                     var endTime = DateTime.UtcNow;
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        Results.Insert(0, new Result() { Time = (endTime - startTime).TotalMilliseconds, Status = e.Message });
-                    }));
+                    UpdateStatsPerSecond(1, (endTime - startTime).TotalMilliseconds, 1);
+
+                    //Dispatcher.BeginInvoke(new Action(() =>
+                    //{
+                    Results[0].Time = (int)(endTime - startTime).TotalMilliseconds;
+                    Results[0].Status = e.Message;
+                    //}));
                 }
             }
         }
